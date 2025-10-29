@@ -166,7 +166,7 @@ wget https://ftp.ensembl.org/pub/release-114/gff3/homo_sapiens/Homo_sapiens.GRCh
 # Decompress file
 gunzip Homo_sapiens.GRCh38.114.gff3.gz
 
-# Optional steps; requires pre-installation of specific tools
+# Optional steps; requires pre-installation of specific tools (samtools, picard, hisat2, tabix)
 
 # Generate fasta index (.fai):
 samtools faidx Homo_sapiens.GRCh38.dna.primary_assembly.fa
