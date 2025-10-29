@@ -186,6 +186,7 @@ hisat2-build Homo_sapiens.GRCh38.dna.primary_assembly.fa hisat2_index/GRCh38
 bgzip Homo_sapiens.GRCh38.110.chr.gff3
 tabix -p gff Homo_sapiens.GRCh38.110.chr.gff3.gz
 ```
+If you need to use another release, check the [Ensembl Archive List](https://asia.ensembl.org/Help/ArchiveList), which provides direct access to all historical Ensembl versions.
 
 </pre>
 </details>
