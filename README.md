@@ -57,7 +57,7 @@ Enables automated discovery of genetic variants and creation of variant-containi
 6. Extraction of Coding Sequences 
 7. Generation of Variant-containing Sequences
 8. Translation and Database Creation
-    - Converting nucleotide sequences into amino acid sequences 
+    -  Converting nucleotide sequences into amino acid sequences 
 
 </pre>
 </details>
@@ -85,8 +85,6 @@ immunopeptidogenomics-workflow/
 ├── docker/
 │   └── Dockerfile                 # Container definition for Docker profile
 ├── environment.yml                # Conda environment definition
-├── assets/
-│   └── Pipeline_structure.png     # Workflow schematic
 └── README.md                      # Project documentation
 </pre>
 </details>
