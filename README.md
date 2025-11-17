@@ -202,51 +202,19 @@ If you need to use another release, check the [Ensembl Archive List](https://asi
 <details>
   <summary><b>Output structure</b></summary>
 <pre>
-results/
-├── alignment/
-|   └── SampleName.sam
-├── bam/ 
-|   ├── SampleName.split.bam
-|   ├── SampleName.fixmate.cs.bam  
-|   ├── SampleName.markdup.bam
-|   ├── SampleName.markdup.bam.bai 
-|   ├── SampleName.sorted.bam   
-│   └── SampleName.sorted.bam.bai
-├── qc/fastp/
-|   ├── SampleName.trim.fastq.gz
-|   ├── SampleName.fastp.json  
-│   └── SampleName.fastp.html            
-└── vcf/
-    ├── annotated_variants/  
-    |      ├── SampleName.annotated.vcf.gz
-    |      └── SampleName.annotated.vcf.gz.tbi
-    ├── bcftools/
-    |      ├── SampleName.raw.vcf.gz
-    |      ├── SampleName.raw.vcf.gz.tbi
-    |      ├── SampleName.filtered.vcf.gz
-    |      └── SampleName.filtered.vcf.gz.tbi  
-    ├── extract_cds_bed/ 
-    |      ├── SampleName.affected_trascripts.txt
-    |      ├── SampleName.cds_affected.bed
-    |      ├── SampleName.protein_altering.bed
-    |      ├── SampleName.protein_altering.positions.tsv
-    |      ├── SampleName.protein_altering.vcf.gz
-    |      └── SampleName.protein_altering.vcf.gz.tbi  
-    ├── extract_sequences/ 
-    |      ├── genome_mutated.fa
-    |      ├── SampleName.mutated_cds.fa
-    |      └── SampleName.original_cds.fa
-    ├── protein_altering/ 
-    |      ├── SampleName.affected_trascripts.txt
-    |      ├── SampleName.protein_altering.bed
-    |      ├── SampleName.protein_altering.positions.tsv
-    |      ├── SampleName.protein_altering.vcf.gz
-    |      └── SampleName.protein_altering.vcf.gz.tbi 
-    └── translate_proteins/   
-           ├── SampleName.mereged_cds.fa
-           ├── SampleName.mutated_proteins.annot.txt
-           └── SampleName.mutated_proteins.fa
-                 
+01_reference/                  # FASTA, FAI, dict, HISAT2 index, filtered GFF3, CDS BED (if built)
+02_prep_reads/                 # fastp HTML/JSON + trimmed FASTQs
+03_alignment/                  # HISAT2 SAM/BAM
+04_bam/                        # coordinate-sorted BAM, fixmate, mark-dup, split-N-cigar
+05_var_ident/                  # raw + filtered VCFs per caller (bcftools/, gatk/, freebayes/)
+06_vcf/
+  ├─ 01_annotated_variants/    # bcftools csq-annotated VCFs
+  ├─ 02_protein_altering/      # filtered VCFs + BED/TSV of protein-altering loci
+  ├─ 03_rna_editing_matches/   # optional A→I overlap reports (when --rna_editing is provided)
+  ├─ 04_extract_cds_bed/       # CDS BEDs for affected transcripts
+  └─ 05_extract_sequences/     # FASTA sequences for mutated CDS regions
+07_translate_proteins/         # merged CDS FASTA, translated proteins, annotation txt
+08_final_db/                   # extended protein FASTA (mutated + canonical + decoys) + annotations          
 </pre>
 </details>
 
