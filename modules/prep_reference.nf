@@ -26,7 +26,7 @@ process FAIDX_DICT {
   container TOOLBOX_IMAGE
   cpus 2
   memory '4 GB'
-  publishDir "${params.outdir}/reference", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}/01_reference", mode: 'copy', overwrite: true
 
   input:
     path ref_fa

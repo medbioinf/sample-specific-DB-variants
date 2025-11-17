@@ -1,7 +1,7 @@
 
 process sort_index_bam {
   tag "$sample_id"
-  publishDir "${params.outdir}/bam", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}/04_bam", mode: 'copy', overwrite: true
   cpus (params.threads ?: 8)
   memory '8 GB'
   container (params.toolbox_image ?: 'biocontainers/samtools:v1.20-1-deb_cv1')

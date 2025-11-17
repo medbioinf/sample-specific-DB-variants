@@ -1,6 +1,6 @@
 process align_hisat2 {
   tag "$sample_id"
-  publishDir "${params.outdir}/alignment", mode: 'copy'
+  publishDir "${params.outdir}/03_alignment", mode: 'copy'
   cpus { params.threads ?: 8 }
   memory '12 GB'
   container "${params.toolbox_image}"
@@ -60,5 +60,7 @@ process align_hisat2 {
       --dta --no-unal \$RG_OPTS \
       -S ${sample_id}.sam
   fi
+
+  echo "Alignment is complited"
   """
 }

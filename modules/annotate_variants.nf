@@ -7,7 +7,7 @@
 
 process annotate_variants {
   tag "$sample_id"
-  publishDir "${params.outdir}/vcf/annotated_variants", mode: 'copy'
+  publishDir "${params.outdir}/06_vcf/01_annotated_variants", mode: 'copy'
   cpus { params.threads ?: 8 }
   container (params.toolbox_image ?: 'biocontainers/bcftools:v1.20-1--deb_cv1')
 

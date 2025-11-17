@@ -6,7 +6,7 @@
 
 process filter_and_extract {
     tag "$sample_id"
-    publishDir "${params.outdir}/vcf/protein_altering", mode: 'copy', overwrite: true, dynamic: true
+    publishDir "${params.outdir}/06_vcf/02_protein_altering", mode: 'copy', overwrite: true, dynamic: true
     cpus { params.threads ?: 8 }
     container (params.toolbox_image ?: 'biocontainers/bcftools:v1.20-1--deb_cv1')
     
@@ -34,6 +34,16 @@ process filter_and_extract {
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%INFO/BCSQ\\n' ${annotated_vcf} \\
         | grep -E 'missense|frameshift|stop_gained|stop_lost|start_lost' \\
         | cut -f1,2 > ${sample_id}.protein_altering.positions.tsv
+
+    # No hits? Emit empty artifacts so downstream steps keep running
+    if [ ! -s ${sample_id}.protein_altering.positions.tsv ]; then
+        echo "No protein-altering variants detected for sample: ${sample_id}"
+        : > ${sample_id}.protein_altering.bed
+        bcftools view -h ${annotated_vcf} -Oz -o ${sample_id}.protein_altering.vcf.gz
+        bcftools index -f -t ${sample_id}.protein_altering.vcf.gz
+        : > ${sample_id}.affected_transcripts.txt
+        exit 0
+    fi
 
     # Step 2: Convert to BED format (0-based)
     awk '{print \$1"\\t"\$2-1"\\t"\$2}' ${sample_id}.protein_altering.positions.tsv > ${sample_id}.protein_altering.bed
@@ -63,6 +73,7 @@ process filter_and_extract {
         | sort -u > ${sample_id}.affected_transcripts.txt
 
     echo "Number of affected transcripts: \$(wc -l < ${sample_id}.affected_transcripts.txt)"
+    echo "Protein-altering variants are identified"
     """
 }
 

@@ -1,6 +1,6 @@
 process prep_reads {
   tag "$sample_id"
-  publishDir "${params.outdir}/qc/fastp", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}/02_prep_reads", mode: 'copy', overwrite: true
   cpus (params.threads ?: 8)
   memory '4 GB'
   container (params.toolbox_image ?: 'quay.io/biocontainers/fastp:0.23.4--h5f7400f_0')
@@ -22,12 +22,14 @@ process prep_reads {
   def r1 = rs.find { it.name =~ /R1|_1\./ } ?: rs[0]
   def r2 = rs.find { it.name =~ /R2|_2\./ }
 
+  def minLen = params.min_read_length ?: 35
+
   """
   set -euo pipefail
 
   # --- Hardcoded-but-sane defaults for RNA-seq ---
   CUT_QUAL=20             # mean quality for sliding trimming
-  MIN_LEN=35              # drop very short reads after trim
+  MIN_LEN=${minLen}       # drop very short reads after trim
   THREADS=${task.cpus}
 
   if [ -n "${r2 ?: ''}" ]; then

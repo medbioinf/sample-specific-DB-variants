@@ -6,7 +6,7 @@
 
 process extract_sequences {
     tag "$sample_id"
-    publishDir "${params.outdir}/vcf/extract_sequences", mode: 'copy', overwrite: true, dynamic: true
+    publishDir "${params.outdir}/06_vcf/05_extract_sequences", mode: 'copy', overwrite: true, dynamic: true
     cpus { params.threads ?: 8 }
     container (params.toolbox_image ?: 'biocontainers/bcftools:v1.20-1--deb_cv1')
     

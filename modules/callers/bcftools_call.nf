@@ -1,6 +1,6 @@
 process bcftools_call {
   tag "$sample_id"
-  publishDir "${params.outdir}/vcf/bcftools", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}/05_var_ident/bcftools", mode: 'copy', overwrite: true
   cpus { params.threads ?: 8 }
   container (params.toolbox_image ?: 'biocontainers/bcftools:v1.20-1--deb_cv1')
   // conda 'bioconda::bcftools=1.20'
@@ -45,5 +45,7 @@ process bcftools_call {
   ${sample_id}.raw.vcf.gz -Oz -o ${sample_id}.filtered.vcf.gz
 
   bcftools index -t ${sample_id}.filtered.vcf.gz
+
+  echo "Variants calling step is completed"
   """
 }

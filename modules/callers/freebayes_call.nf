@@ -1,6 +1,6 @@
 process freebayes_call {
   tag "$sample_id"
-  publishDir "${params.outdir}/vcf/freebayes", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}/05_var_ident/freebayes", mode: 'copy', overwrite: true
   cpus { params.threads ?: 8 }
   container (params.toolbox_image ?: 'ghcr.io/your-org/variant-caller-toolbox:latest')
 
@@ -41,5 +41,7 @@ process freebayes_call {
   ${sample_id}.raw.vcf.gz -Oz -o ${sample_id}.filtered.vcf.gz
 
   bcftools index -t ${sample_id}.filtered.vcf.gz
+
+  echo "Variants calling step is completed"
   """
 }

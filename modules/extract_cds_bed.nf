@@ -5,7 +5,7 @@
 
 process extract_cds_bed {
     tag "$sample_id"
-    publishDir "${params.outdir}/vcf/extract_cds_bed", mode: 'copy', overwrite: true, dynamic: true
+    publishDir "${params.outdir}/06_vcf/04_extract_cds_bed", mode: 'copy', overwrite: true, dynamic: true
     cpus { params.threads ?: 8 }
     container (params.toolbox_image ?: 'biocontainers/bcftools:v1.20-1--deb_cv1')
 

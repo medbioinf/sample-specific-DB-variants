@@ -1,8 +1,8 @@
 process markdup {
   tag "$sample_id"
-  publishDir "${params.outdir}/bam", mode: 'copy', overwrite: true
-  cpus (params.threads ?: 8)
-  memory '8 GB'
+  publishDir "${params.outdir}/04_bam", mode: 'copy', overwrite: true
+  cpus (params.markdup_threads ?: params.threads ?: 4)
+  memory '16 GB'
   container (params.toolbox_image ?: 'biocontainers/samtools:v1.20-1-deb_cv1')
   // conda 'bioconda::samtools=1.20'
 
@@ -24,6 +24,7 @@ process markdup {
 
   # samtools markdup expects coordinate-sorted input
   samtools markdup -@ ${task.cpus} ${rm_flag} \
+                   -l 150 \
                    -f ${sample_id}.markdup.metrics.txt \
                    ${sorted_bam} ${sample_id}.markdup.bam
 

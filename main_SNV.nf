@@ -48,6 +48,8 @@ include { filter_and_extract } from './modules/filter_and_extract.nf'
 include { extract_cds_bed } from './modules/extract_cds_bed.nf'
 include { extract_sequences } from './modules/extract_sequences.nf'
 include { translate_proteins } from './modules/translate_proteins.nf'
+include { match_rna_editing } from './modules/match_rna_editing.nf'
+include { final_protein_db } from './modules/final_protein_db.nf'
 
 
 // Validation
@@ -74,6 +76,9 @@ def havePrebuilt() {
 // workflow
 // --------------
 workflow {
+
+  def caller  = params.caller?.toLowerCase()
+  def useGatk = (caller == 'gatk')
 
   // inputs
   // simple detector for paired pattern
@@ -112,12 +117,16 @@ workflow {
     // create a single-emission channel carrying the 7-tuple
     ch_ref_bundle = Channel.value( tuple(ref_fa, ref_fai, ref_dict, hisat2, gff3_f, gff3_tbi, cds_bed) )
 
-    log.info "Using prebuilt reference bundle (skipping prep_reference)."
+    log.info "Referecne bundle is used"
   }
   else {
     // prep_reference must define: out: tuple val(fa), val(fai), val(dict), path(hisat2_tar_or_dir), path(gff3_f), path(gff3_tbi), path(cds_bed)
     prep_reference(ch_ref_fasta, ch_gff3)
-    ch_ref_bundle = prep_reference.out.ref_bundle     // <-- assign the emitted channel directly
+    ch_ref_bundle = prep_reference.out.ref_bundle
+      .map { fa, fai, dict, hisat2, gff, gff_tbi, cds ->
+        log.info "Refercne bundle is created"
+        tuple(fa, fai, dict, hisat2, gff, gff_tbi, cds)
+      }
 
     log.info "Building reference bundle via prep_reference."
   }
@@ -140,7 +149,12 @@ workflow {
 
   // 2) align with HISAT2 (module accepts index dir or .tar.gz)
   align_hisat2( ch_trimmed, ch_ref_for_align )  // emits (sample_id, ${sample_id}.sam) or (sample_id, ${sample_id}.unsorted.bam)
-  def ch_sam_or_bam = align_hisat2.out[0]
+  def ch_align_out = align_hisat2.out[0]
+  ch_align_out.subscribe { tuple ->
+    def sid = tuple instanceof java.util.List ? tuple[0] : tuple?.getAt(0)
+    if (sid) log.info "Alignment is complited (${sid})"
+  }
+  def ch_sam_or_bam = ch_align_out
 
   // 3) sort + index BAM
   sort_index_bam(ch_sam_or_bam)    // emits (sample_id, ${sample}.sorted.bam) + .bai
@@ -154,24 +168,28 @@ workflow {
   def ch_dedup_bam = markdup.out.bam
 
   // 5) split N CIGAR reads if GATK will be used 
-  def ch_ref_for_gatk = ch_ref_bundle.map { fa, fai, dict, hisat2, gff, gff_tbi, cds -> tuple(fa, fai, dict) }
-  def ch_split = split_n_cigar(ch_dedup_bam, ch_ref_for_gatk)   // emits (sample_id, *.split.bam)
+  def ch_ref_for_gatk = useGatk ? ch_ref_bundle.map { fa, fai, dict, hisat2, gff, gff_tbi, cds -> tuple(fa, fai, dict) } : null
+  def ch_split = useGatk ? split_n_cigar(ch_dedup_bam, ch_ref_for_gatk) : null   // emits (sample_id, *.split.bam) when used
   
-  def bam_for_calling = (params.caller?.toLowerCase() == 'gatk')
-  ? ch_split.split_bam      // emits (sample_id, *.split.bam)
-  : ch_dedup_bam            // emits (sample_id, *.markdup.bam)
+  def bam_for_calling = useGatk
+    ? ch_split.split_bam      // emits (sample_id, *.split.bam)
+    : ch_dedup_bam            // emits (sample_id, *.markdup.bam)
 
   // 6) call variants: bcftools | gatk | freebayes 
   def raw_vcf =
-  (params.caller?.toLowerCase() == 'bcftools') ? bcftools_call(bam_for_calling, ref_fa_only, params.min_dp as int, params.min_alt as int) :
-  (params.caller?.toLowerCase() == 'gatk')     ? gatk_haplotypecaller(bam_for_calling, ch_ref_for_gatk, params.min_dp as int, params.min_alt as int) :
-  (params.caller?.toLowerCase() == 'freebayes')? freebayes_call(bam_for_calling, ref_fa_only, params.min_dp as int, params.min_alt as int) :
+  (caller == 'bcftools') ? bcftools_call(bam_for_calling, ref_fa_only, params.min_dp as int, params.min_alt as int) :
+  (useGatk)              ? gatk_haplotypecaller(bam_for_calling, ch_ref_for_gatk, params.min_dp as int, params.min_alt as int) :
+  (caller == 'freebayes')? freebayes_call(bam_for_calling, ref_fa_only, params.min_dp as int, params.min_alt as int) :
   { exit 1, "Unknown --caller '${params.caller}'. Use: bcftools | gatk | freebayes" }()
 
   // take the unified outlet for downstream
-  def ch_vcf_gz = raw_vcf.vcf_gz
+  def ch_vcf_channel = raw_vcf.vcf_gz
+  ch_vcf_channel.subscribe { sid, vcf ->
+    if (sid) log.info "Variants calling step is completed (${sid})"
+  }
+  def ch_vcf_gz = ch_vcf_channel
   // combine filtered .vcf + index into one channel
-  def vcf_tbi_ch = raw_vcf.vcf_gz.map { sid, vcf -> tuple(sid, vcf, file("${vcf}.tbi"))}  // emits (sample_id, *.vcf.gz, *.vcf.gz.tbi)
+  def vcf_tbi_ch = ch_vcf_gz.map { sid, vcf -> tuple(sid, vcf, file("${vcf}.tbi"))}  // emits (sample_id, *.vcf.gz, *.vcf.gz.tbi)
  
   //--------------------------------------
   // Peptide Identification workflow steps
@@ -210,10 +228,26 @@ workflow {
   annotated_vcf = annotate_variants(ann_input_ch)   // emits annotated_vcf
 
   // 2) filter for protein-altering variants and extracts affeected trasncripts
-  protein_altering_bundle = filter_and_extract(annotated_vcf)    // emits protein_altering_bundle: tuple(sid, prot_alter.vcf.gz, .tbi, positions.tsv, bed, affected_transcripts.txt)
+  def protein_altering_channel = filter_and_extract(annotated_vcf)    // emits protein_altering_bundle: tuple(sid, prot_alter.vcf.gz, .tbi, positions.tsv, bed, affected_transcripts.txt)
+  protein_altering_channel.subscribe { tuple ->
+    def sid = tuple instanceof java.util.List ? tuple[0] : tuple?.getAt(0)
+    if (sid) log.info "Protein-altering variants are identified (${sid})"
+  }
+  def protein_altering_bundle = protein_altering_channel
   
   def filtered_vcf_all = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx -> tuple(sid, vcf, tbi) }
   def transcripts      = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx -> tuple(sid, pos, bed, vcf, tbi, tx) }
+  
+  // Optional step: match RNA editing sites (A to I RNA editing events)
+  def editing_catalog   = params.rna_editing ? file(params.rna_editing) : null
+  def editing_matches_ch = null
+  if (editing_catalog) {
+    def editing_input = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx ->
+      tuple(sid, vcf, tbi, editing_catalog)
+    }
+    match_rna_editing(editing_input)
+    editing_matches_ch = match_rna_editing.out.editing_matches
+  }
   
   // 3) extract BED of CDS regions for filtered transcripts
   sequences_input_ch = transcripts
@@ -233,10 +267,57 @@ workflow {
 
   // 5) translate CDS sequences to proteins
   def vcf_for_translate = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx -> tuple(sid, vcf, tbi) }
-  def translate_input_ch = cds_sequences.mutated_cds_fa
+  def translate_input_ch_base = cds_sequences.mutated_cds_fa
     .map { f -> tuple(f.baseName.replace('.mutated_cds',''), f) }   // (sid, mutated_cds.fa)
     .join(vcf_for_translate)                                        // [sid, fa, vcf, tbi]
-    .map { row -> tuple(row[0], row[1], row[2], row[3]) }           // (sid, fa, vcf, tbi)
-  proteins = translate_proteins(translate_input_ch)
+  def translate_input_ch
+  if (editing_catalog) {
+    translate_input_ch = translate_input_ch_base
+      .join(editing_matches_ch)
+      .map { row -> tuple(row[0], row[1], row[2], row[3], row[4]) }
+  }
+  else {
+    def placeholder_path = "${workflow.projectDir}/.empty_rna_editing.txt"
+    def placeholder_file = new File(placeholder_path)
+    if (!placeholder_file.exists()) {
+      placeholder_file.text = ''
+    }
+    def placeholder_nf_file = file(placeholder_path)
+    translate_input_ch = translate_input_ch_base
+      .map { row -> tuple(row[0], row[1], row[2], row[3], placeholder_nf_file) }
+  }
+  translate_proteins(translate_input_ch)
+
+  // 6) concatenate mutated proteins with: canonical database + decoy database (if provided)
+  def mutated_proteins_fa    = translate_proteins.out.mutated_proteins_fa
+    .map { path_obj ->
+      def base = path_obj?.baseName ?: path_obj?.name ?: path_obj?.toString()
+      def sid = base?.replace('.mutated_proteins','')
+      log.info "CDSs are translated to proteins (${sid ?: 'unknown sample'})"
+      path_obj
+    }
+  def mutated_proteins_annot = translate_proteins.out.mutated_proteins_annot
+
+  def canonical_db = params.canonical_proteins ? file(params.canonical_proteins) : null
+  def decoy_db     = params.decoy_proteins ? file(params.decoy_proteins) : null
+
+  if (canonical_db && decoy_db) {
+    def mutated_channel = mutated_proteins_fa.map { fa -> tuple(fa.baseName.replace('.mutated_proteins',''), fa) }
+    def annot_channel   = mutated_proteins_annot.map { annot -> tuple(annot.baseName.replace('.mutated_proteins.annot',''), annot) }
+    def final_db_input  = mutated_channel
+      .join(annot_channel)
+      .map { row -> tuple(row[0], row[1], row[2], canonical_db, decoy_db) }
+    final_protein_db(final_db_input)
+    final_protein_db.out.extended_protein_db.subscribe { tuple ->
+      def sid = tuple instanceof java.util.List ? tuple[0] : tuple?.getAt(0)
+      if (sid) log.info "Canincal protein database is extended with mutated proteins (${sid})"
+    }
+  }
+  else if (canonical_db || decoy_db) {
+    log.warn "Both --canonical_proteins and --decoy_proteins are required to build the extended FASTA; skipping final concatenation."
+  }
+  else {
+    log.info "Canonical/decoy FASTA inputs not provided; skipping extended protein database concatenation."
+  }
   
 }

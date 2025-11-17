@@ -7,7 +7,7 @@
 
 process translate_proteins {
     tag "$sample_id"
-    publishDir "${params.outdir}/vcf/translate_proteins", mode: 'copy'
+    publishDir "${params.outdir}/07_translate_proteins", mode: 'copy'
     cpus { params.threads ?: 8 }
     container (params.toolbox_image ?: 'ghcr.io/your-org/variant-caller-toolbox:latest')
 
@@ -15,7 +15,8 @@ process translate_proteins {
     tuple val(sample_id),
       path(mutated_cds_fa),
       path(filtered_vcf),
-      path(filtered_vcf_tbi)
+      path(filtered_vcf_tbi),
+      path(rna_editing_matches)
 
     when:
     mutated_cds_fa.exists() && filtered_vcf.exists() && filtered_vcf_tbi.exists()
@@ -28,6 +29,14 @@ process translate_proteins {
     script:
     """
     set -euo pipefail
+
+    if [ ! -s ${mutated_cds_fa} ]; then
+      echo "No CDS sequences to translate for sample: ${sample_id}"
+      : > ${sample_id}.merged_cds.fa
+      : > ${sample_id}.mutated_proteins.fa
+      : > ${sample_id}.mutated_proteins.annot.txt
+      exit 0
+    fi
 
     # Step 1: merge exon chunks per transcript (headers may be '>ID' or '>ID:...')
     awk '
@@ -75,77 +84,94 @@ process translate_proteins {
     export SAMPLE_ID="${sample_id}"
 
     # extract BCSQ once (CHROM,POS,BCSQ); BCSQ entries are comma-separated; fields split by '|'
-    bcftools query -f '%CHROM\\t%POS\\t%INFO/BCSQ\\n' ${filtered_vcf} > bcsq.tsv
+    bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%INFO/BCSQ\\n' ${filtered_vcf} > bcsq.tsv
+
+    if [ -n "\${rna_editing_matches:-}" ] && [ -s "\${rna_editing_matches:-}" ]; then
+      export RNA_EDITING_MATCHES="${rna_editing_matches}"
+    else
+      unset RNA_EDITING_MATCHES || true
+    fi
 
     python3 - <<'PY'
-import csv
 import collections
+import csv
 import os
+import re
 
-aa_map = {
-    "A": "Ala", "R": "Arg", "N": "Asn", "D": "Asp", "C": "Cys",
-    "E": "Glu", "Q": "Gln", "G": "Gly", "H": "His", "I": "Ile",
-    "L": "Leu", "K": "Lys", "M": "Met", "F": "Phe", "P": "Pro",
-    "S": "Ser", "T": "Thr", "W": "Trp", "Y": "Tyr", "V": "Val",
-    "*": "Ter", "U": "Sec", "O": "Pyl"
-}
-
-def expand(code: str) -> str:
-    if len(code) == 1:
-        return aa_map.get(code, code)
-    return ''.join(aa_map.get(ch, ch) for ch in code)
-
-def parse_change(field: str):
-    if ">" not in field:
-        return None
-    left, right = field.split(">", 1)
-    pos = ''.join(ch for ch in left if ch.isdigit())
-    ref = ''.join(ch for ch in left if ch.isalpha() or ch == "*")
-    alt = ''.join(ch for ch in right if ch.isalpha() or ch == "*")
-    if not pos or not ref or not alt:
-        return None
-    return pos, ref, alt
-
-ann = collections.OrderedDict()
 caller = os.environ.get("CALLER", "NA")
 sample = os.environ.get("SAMPLE_ID", "sample")
+editing_file = os.environ.get("RNA_EDITING_MATCHES")
+
+editing_hits = set()
+if editing_file and os.path.exists(editing_file):
+    with open(editing_file) as matches:
+        for line in matches:
+            line = line.strip()
+            if not line or line.startswith("CHROM"):
+                continue
+            parts = line.split("\\t")
+            if len(parts) < 4:
+                continue
+            chrom, pos, _ref, alt = parts[:4]
+            try:
+                editing_hits.add((chrom, int(pos), alt.upper()))
+            except ValueError:
+                continue
+
+ann = collections.OrderedDict()
 
 with open("bcsq.tsv") as handle:
     reader = csv.reader(handle, delimiter="\\t")
     for row in reader:
-        if len(row) < 3 or not row[2]:
+        if len(row) < 5:
             continue
-        for entry in row[2].split(","):
+        chrom, pos_str, ref, alt_field, info = row
+        if not info:
+            continue
+        try:
+            pos = int(pos_str)
+        except ValueError:
+            continue
+        entries = [entry for entry in info.split(",") if entry]
+        for entry in entries:
             fields = entry.split("|")
-            tx_id = ""
-            for field in fields:
-                if field.startswith("ENST"):
-                    tx_id = field
-                    break
-                if field.startswith("transcript:"):
-                    _, _, maybe = field.partition(":")
-                    if maybe.startswith("ENST"):
-                        tx_id = maybe
-                        break
-            if not tx_id:
+            if len(fields) < 4:
                 continue
-            aa_change = None
-            for field in fields:
-                parsed = parse_change(field)
-                if not parsed:
+            tx_id = fields[2] if len(fields) > 2 else ""
+            if not tx_id.startswith("ENST"):
+                continue
+            consequence = fields[0]
+            aa_change = fields[5] if len(fields) > 5 else ""
+            dna_change = fields[6] if len(fields) > 6 else ""
+            is_utr = "utr" in consequence.lower()
+            if not aa_change or aa_change in {".", "-"}:
+                if is_utr:
+                    aa_change = "variant hits the UTR - no amino acid change"
+                else:
                     continue
-                pos, ref, alt = parsed
-                aa_change = f"p.{expand(ref)}{pos}{expand(alt)}"
-                break
-            if not aa_change:
-                continue
+            alt_nt = None
+            if dna_change and ">" in dna_change:
+                match = re.search(r'>\\s*([ACGT]+)', dna_change)
+                if match:
+                    alt_nt = match.group(1).upper()
+            is_editing = False
+            if alt_nt:
+                if (chrom, pos, alt_nt) in editing_hits:
+                    is_editing = True
             bucket = ann.setdefault(tx_id, [])
-            if aa_change not in bucket:
-                bucket.append(aa_change)
+            record = (aa_change, is_editing)
+            if record not in bucket:
+                bucket.append(record)
 
 with open("tx2aa.tsv", "w") as out_handle:
     for tx_id, changes in ann.items():
-        out_handle.write(f"{tx_id}\\t{';'.join(changes)}\\n")
+        labels = []
+        for aa_change, is_editing in changes:
+            label = aa_change
+            if is_editing:
+                label = f"{label}(A->I editing)"
+            labels.append(label)
+        out_handle.write(f"{tx_id}\\t{';'.join(labels)}\\n")
 
 with open("tx.list") as tx_handle, open(f"{sample}.mutated_proteins.annot.txt", "w") as annot_handle:
     for raw in tx_handle:
@@ -153,7 +179,10 @@ with open("tx.list") as tx_handle, open(f"{sample}.mutated_proteins.annot.txt", 
         if not tx:
             continue
         variants = ann.get(tx, [])
-        aa_str = ';'.join(variants) if variants else "NA"
+        aa_str = ';'.join(
+            f"{aa_change}{'(A->I editing)' if is_editing else ''}"
+            for aa_change, is_editing in variants
+        ) if variants else "NA"
         annot_handle.write(f">{tx}\\n")
         annot_handle.write(f"caller: {caller}\\n")
         annot_handle.write(f"variants: {aa_str}\\n")
@@ -161,13 +190,14 @@ PY
 
     echo "Proteins: \$(grep -c '^>' ${sample_id}.mutated_proteins.fa || true)"
     echo "Annotations written to ${sample_id}.mutated_proteins.annot.txt"
+    echo "CDSs are translated to proteins"
     """
 }
 
 // Workflow definition
 workflow {
   take:
-    input_ch   // tuple(val(sample_id), path(mutated_cds_fa), path(filtered_vcf), path(filtered_vcf_tbi))
+    input_ch   // tuple(val(sample_id), path(mutated_cds_fa), path(filtered_vcf), path(filtered_vcf_tbi), path(rna_editing_matches?))
 
   main:
     result = translate_proteins(input_ch)

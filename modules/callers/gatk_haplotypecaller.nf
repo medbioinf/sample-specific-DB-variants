@@ -1,6 +1,6 @@
 process gatk_haplotypecaller {
   tag "$sample_id"
-  publishDir "${params.outdir}/vcf/gatk", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}/05_var_ident/gatk", mode: 'copy', overwrite: true
   cpus { params.threads ?: 8 }
   memory '12 GB'
   container (params.toolbox_image ?: 'broadinstitute/gatk:4.5.0.0')
@@ -44,5 +44,7 @@ process gatk_haplotypecaller {
     -Oz -o ${sample_id}.filtered.vcf.gz
 
   bcftools index -t ${sample_id}.filtered.vcf.gz
+
+  echo "Variants calling step is completed"
   """
 }

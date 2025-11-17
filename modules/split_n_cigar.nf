@@ -1,6 +1,6 @@
 process split_n_cigar {
   tag "$sample_id"
-  publishDir "${params.outdir}/bam", mode: 'copy'
+  publishDir "${params.outdir}/04_bam", mode: 'copy'
   cpus (params.threads ?: 8)
   container (params.toolbox_image ?: 'variant-caller-toolbox:latest')
    // conda 'bioconda::gatk4=4.5.0.0 bioconda::samtools=1.20'
