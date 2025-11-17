@@ -1,88 +1,255 @@
-# Immunopeptidomics Variant Calling Workflow
-Nextflow DSL2 pipeline for calling RNA-seq single-nucleotide variants (SNVs) and translating them into peptide sequences suitable for immunopeptidomics studies. The workflow trims raw reads, aligns them with HISAT2, performs variant calling (bcftools, GATK, or FreeBayes), annotates functional consequences, and extracts/ translates coding sequences carrying protein-altering variants.
+# Sample-Specific Variant Calling and Peptide Database Generation Workflow for Immunopeptidogenomics 
 
-## Key Capabilities
-- Fastp-based read QC/trim, HISAT2 alignment, duplicate handling, and optional GATK SplitNCigarReads for RNA alignments.
-- Variant calling with bcftools, GATK HaplotypeCaller, or FreeBayes, followed by bcftools consequence annotation.
-- Automatic filtering for protein-altering variants, CDS extraction, and peptide translation for downstream immunopeptidomics.
-- Flexible reference handling: build indexes/GFF3 derivatives on the fly or supply a pre-built bundle.
-- Containerised (Docker/Apptainer) or Conda-based execution for reproducible environments.
+[Nextflow](https://www.nextflow.io/) DSL2 pipeline for calling RNA-seq variants and translating them into peptide sequences suitable for immunopeptidomics studies. The workflow trims raw reads, aligns them with HISAT2, performs variant calling (bcftools, GATK, or FreeBayes), annotates functional consequences, and extracts/ translates coding sequences carrying protein-altering variants.
 
-## Repository Layout
-- `main_SNV.nf` – entry-point pipeline defining orchestration and module wiring.
-- `modules/` – reusable DSL2 modules (reference prep, alignment, callers, annotation, peptide generation).
-- `nextflow.config` – default parameters, profiles, and resource settings.
-- `env/base.yml` – Conda environment specification covering all required bioinformatics tools.
-- `Dockerfile` – build recipe for a Micromamba-based toolbox image mirroring `env/base.yml`.
-- `README.md` – project documentation (this file).
 
-## Prerequisites
-- Nextflow `>= 23.04` (DSL2 compatible).
-- Either:
-  - Container runtime (Docker, Podman, or Apptainer/Singularity), **or**
-  - Conda/Mamba for creating environments from `env/base.yml`.
-- Access to required input data: FASTQ reads, reference FASTA (+ optional GFF3/dbSNP).
+<details>
+  <summary><b>Introduction</b></summary>
 
-## Getting Started
-1. Clone the repository  
-   ```bash
-   git clone git@github.com:Lisa-G-88/variant_calling_immunopeptidogenomics.git
-   cd variant_calling_immunopeptidogenomics
-   ```
-2. Choose an execution environment:
-   - **Docker/Podman**  
-     Build the toolbox image (if you do not already host it in a registry):
-     ```bash
-     docker build -t variant-caller-toolbox:latest .
-     ```
-     Launch Nextflow with `-profile docker` (default image name matches the config).
-   - **Apptainer/Singularity**  
-     Use `-profile docker` and ensure Apptainer is configured to run Docker images.
-   - **Conda/Mamba**  
-     ```bash
-     mamba env create -f env/base.yml  # or conda env create
-     conda activate variant-toolbox
-     ```
-     Launch Nextflow without the docker profile (or add a custom `-profile conda` if you extend the config).
+### Biological background
 
-## Running the Pipeline
-Basic execution example:
+Immunopeptidogenomics is a multidisciplinary field that combines genomics, transcriptomics, and immunopeptidomics to investigate how genetic variations influence the range of peptides displayed on the cell surface by [major histocompatibility complex (MHC)](https://www.sciencedirect.com/science/article/pii/S0091674909028371?via%3Dihub) proteins. Implementation of mass spectrometry–based peptide identification along with next-generation sequencing (NGS) data allows for linking distinct genetic variants to their potential immunological impacts.
+
+Conventional proteomic studies rely on reference protein databases (e.g., [UniProt](https://www.uniprot.org/) or [Ensembl](https://www.ensembl.org/index.html)) representing the canonical gene products of human DNA. However, these standard databases do not account for sample-specific genetic modifications, such as single nucleotide variants (SNVs), deletions/inserts and RNA-editing events, which could lead to altered or non-canonical peptides. These variant peptides often go unidentified in standard analysis procedures, even though they are biologically relevant.
+
+---
+
+### Variant-derived peptides
+
+Detection and characterization of variant-derived peptides is essential for the understanding of how mutations impact immune recognition. In cancer and infectious disease, such peptides can serve as neoantigens—novel, non-self antigens presented by either tumor or infected cells that are recognized by the immune system as foreign. Identifying these disease-associated peptides is informative for the development of immunotherapy and precise medical treatment.
+
+From a systems biology perspective, building sample-specific protein databases with detected variants provides a more thorough and representative personalized view of antigen presentation. This allows for greater proteome coverage and improves upon the sensitivity of peptide identification in mass spectrometry workflows as well as highlighting previously obscured regions of the "dark immunopeptidome"— antigenic peptides not represented by standard reference databases.
+
+---
+
+### Bioinformatics background
+
+The majority of workflows already established for immunopeptidogenomics workflows are tied to tools or specific environments. This constraining factor hinders flexibility, scalability, and overall workflow reproducibility. This workflow proposes an alternative approach by integrating a modular, containerized, and reproducible workflow based on Nextflow DSL2. The pipeline supports automated variant calling from RNA-seq data with user-defined parameters and integrates transcriptomic variants consisitng of nonsynonymous SNVs and indels with canonical proteomes through the creation of sample-specific protein databases. These protein databases allow for greater accuracy and transparency when identifying HLA-presented peptides downstream, and allow for easy adaptation of more workflows, even when computational requirements differ.
+
+</details>
+
+
+<details>
+  <summary><b>Purpose & Features</b></summary>
+<pre>
+Enables automated discovery of genetic variants and creation of variant-containing protein database.
+
+### Main features:
+  - Modular Nextflow DSL2 structure for transparency and flexibility
+  - Support for three variant callers (user-defined choice)
+  - Built-in Docker and Conda compatibility for reproducibility
+</pre>
+</details>
+
+<details>
+  <summary><b>Pipeline Overview</b></summary>
+<pre>
+1. Input Preparation
+    -  Normalization of RNA-seq data; 
+    -  Pre-processing of refernce and annotation data
+2. Read Alignment
+    -  Aligning reads to the reference genome
+3. Post-processing
+    -  Refining alignment results
+4. Variant-calling
+    -  Identifying variants using:BCFtools, FreeBayes or GATK
+5. Variants Annotation 
+6. Extraction of Coding Sequences 
+  Optional step: identification of A to I RNA-editing events
+7. Generation of Variant-containing Sequences
+8. Translation and Database Creation
+    -  Converting nucleotide sequences into amino acid sequences 
+9. Generation of extended Protein Database 
+    -  Variant-containing proteins are merged together with canonical and decoy proteins (provided by user)
+
+</pre>
+</details>
+
+<details>
+  <summary><b>Repository structure</b></summary>
+<pre>
+immunopeptidogenomics-workflow/
+├── main_SNV.nf                   # Main Nextflow pipeline script
+├── modules/                      # Individual DSL2 modules
+│   ├── prep_reference.nf
+│   ├── alignment_hisat2.nf
+│   ├── markdup.nf
+│   ├── split_n_cigar.nf
+│   ├── variant_calling_bcftools.nf
+│   ├── variant_calling_freebayes.nf
+│   ├── variant_calling_gatk.nf
+│   ├── annotate_variants.nf
+│   ├── filter_and_extract.nf
+│   ├── match_rna_editing.nf       # Optional step, expands final FASTA annotation 
+│   ├── extract_cds_bed.nf
+│   ├── extract_sequences.nf
+│   ├── translate_proteins.nf
+│   └── final_protein_db.nf
+├── conf/
+│   └── nextflow.config            # Pipeline configuration
+├── docker/
+│   └── Dockerfile                 # Container definition for Docker profile
+├── environment.yml                # Conda environment definition
+└── README.md                      # Project documentation
+</pre>
+</details>
+
+<details>
+  <summary><b>Instalation</b></summary>
+
+**Requirements**
+
+- Nextflow ≥ 23.10
+- Docker or Conda (depending of profile)
+- Git
+
+**Setup**
+
+To set up the workflow, clone the repository and choose your preferred environment:
 ```bash
-nextflow run main_SNV.nf \
-  --reads "data/*_{R1,R2}.fastq.gz" \
-  --ref_fasta references/genome.fa \
-  --gff3_file references/annotation.gff3.gz \
-  --dbsnp_path references/dbsnp.vcf.gz \
-  --outdir results \
-  --caller bcftools \
-  -profile docker
+# Clone repository
+git clone https://github.com/<your-username>/immunopeptidogenomics-workflow.git
+cd immunopeptidogenomics-workflow
+
+# Option 1: Use Docker
+nextflow run main_SNV.nf -profile docker
+
+# Option 2: Use Conda
+nextflow run main_SNV.nf -profile conda
 ```
+</pre>
+</details>
 
-### Key Parameters
-- `--reads` (required): FASTQ glob or pair pattern (`*_R{1,2}.fastq.gz`).
-- `--ref_fasta` (required): reference genome FASTA.
-- `--gff3_file`: GFF3 annotation (enables consequence annotation + CDS derivation).
-- `--dbsnp_path`: dbSNP VCF or directory of VCFs for rsID annotation.
-- `--caller`: `bcftools`, `gatk`, or `freebayes` (default: `bcftools`).
-- `--outdir`: output directory root (`./results` by default).
-- Reference bundle overrides (set `--prebuilt_bundle true` and provide `--ref_fai`, `--ref_dict`, `--hisat2_index`, `--gff3_filtered`, `--gff3_filtered_tbi`, `--cds_bed` to reuse precomputed assets).
-- `--threads`, `--toolbox_image`, and other defaults are configured in `nextflow.config`.
+<details>
+  <summary><b>Input files</b></summary>
 
-A full list of parameters is documented inline in `main_SNV.nf` and `nextflow.config`.
+The workflow requires several input parameters that define sequencing data and reference files.
 
-## Outputs
-Outputs are published beneath `--outdir`:
-- `qc/fastp/` – HTML/JSON reports and trimmed FASTQs.
-- `alignment/` – HISAT2 alignments and intermediate BAM/SAM files.
-- `reference/` – Generated `.fasta`, `.fai`, `.dict`, HISAT2 indexes, filtered GFF3, and CDS BED (when reference prep runs).
-- `vcf/` – Caller-specific VCFs, annotated variants, protein-altering subsets, CDS BEDs, and translated sequences.
-- Additional logs and work directories follow Nextflow conventions.
+| **Parameter**        | **Description**                             | **Example**                                 |
+|----------------------|---------------------------------------------|---------------------------------------------|
+| `--reads`            | FASTQ files with RNA-seq reads (gzip)       | `/<your-path>/SAMPLE_READS{1,2}.fastq.gz`   |
+| `--ref_fasta`        | Reference genome in FASTA format            | `/<your-path>/GRCh38.fa`                    |
+| `--prebuilt_bundle`  | Defines weather user can provide all refrence files along with corresponding index files, or index files need to be generated by pipeline|`true` or `false`|
+| `--ref_fai`          | FASTA index                                 | `/<your-pathy>/GRCh38.fa.fai`               |
+| `--ref_dict`         | Reference dictionary                        | `/<your-path>/GRCh38.dict`                  |
+| `--hisat2_index`     | Path to HISAT2 index directory              | `/<your-path>/hisat2_index/`                |
+| `--gff3_filtered`    | Annotation file in GFF3 formate (gzip)      | `/<your-path>/GRCh38.110.mainChr.gff3.gz`   |
+| `--gff3_filtered_tbi`| Annotation file index                       | `/<your-path>/GRCh38.110.mainChr.gff3.gz.tbi`|
+| `--cds_bed`          | Genomic coordinates for coding sequences    | `/<your-path>/cds.bed`                      |
+| `--rna_editing`      | Genomic coordinates for A to I editing      | `/<your-path>/REDIportal_GRCh38_ensembl_v3.bed.gz`|
+| `--min_dp`           | Filtering value for the depth of reads coverage | `3`                                     |
+| `--min_alt`          | Filtering value for the number of alternated nucleotides among the total number nucleotides covering the specific position |`3`|
+| `--min_read_length`  | Filtering value for the leanth of reads     | `35`                                        |
+| `--caller`           | Variant caller selection (`bcftools`, `freebayes`, `gatk`) | `bcftools`                   |
+| `--canonical_proteins`| File with canonical proteins in FASTA formatee| `/<your-path>/uniprotkb_proteome.fasta`  |
+| `--decoy_proteins`   | File with decoy proteins in FASTA formate   | `/<your-path>/Universal_Contaminants.fasta` |
+| `--outdir`           | Output directory                            | `./results_bcftools`                        |
 
-## Reference Bundles
-By default the workflow will build indexes and GFF3 derivatives. If you already maintain a reference bundle, supply the `--prebuilt_bundle true` flag along with the extra file paths so the pipeline skips rebuilding and reuses your assets.
+If some of the parameters are not provided directly in the terminal, the pipeline will stop with an error message. 
+</pre>
+</details>
 
-## Development & Branching
-- `main` – primary pipeline code and modules (recommended for production).
-- `support` – optional branch for staging enhancements or exploratory work.
+<details>
+  <summary><b>Reference files</b></summary>
 
-Feel free to extend the workflow with additional modules (e.g., alternative aligners) or new profiles. Contributions and issues are welcome.
+If user doesn’t already have the necessary reference genome and annotation files, they can be downloaded from publicly available sources.  
+- Reference genome: [Ensembl GRCh38 Release 114](https://ftp.ensembl.org/pub/release-114/fasta/homo_sapiens/dna/) (Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz)
+- Gene model for  allignment and annotation: [Ensembl GTF](https://ftp.ensembl.org/pub/release-114/gff3/homo_sapiens/) (Homo_sapiens.GRCh38.114.chr.gff3.gz)
+- List of A-to-I RNA editing sites: [REDIportal database](http://srv00.recas.ba.infn.it/atlas/index.html) (REDIportal_GRCh38_ensembl_v3.bed.gz)
+
+If .fai, .dict, or HISAT2 index files are missing, they will be automatically created by the pipeline module prep_reference.nf during execution.
+
+Command-line Download Example:
+```bash
+# Create a directory for reference data and go their 
+mkdir -p /<your-pathy>/genome && cd /<your-path>/genome
+
+# Download reference genome: 
+wget https://ftp.ensembl.org/pub/release-114/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Decompress file
+gunzip Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Download annotation file:
+wget https://ftp.ensembl.org/pub/release-114/gff3/homo_sapiens/Homo_sapiens.GRCh38.114.chr.gff3.gz
+
+# Decompress file
+gunzip Homo_sapiens.GRCh38.114.gff3.gz
+
+# Optional steps; requires pre-installation of specific tools (samtools, picard, hisat2, tabix)
+
+# Generate fasta index (.fai):
+samtools faidx Homo_sapiens.GRCh38.dna.primary_assembly.fa
+
+# Generate sequence dictionary (.dict):
+picard CreateSequenceDictionary R=Homo_sapiens.GRCh38.dna.primary_assembly.fa O=Homo_sapiens.GRCh38.dna.primary_assembly.dict
+
+# Build HISAT2 genome index:
+# Create output directory
+mkdir -p hisat2_index
+# Build index from reference genome
+hisat2-build Homo_sapiens.GRCh38.dna.primary_assembly.fa hisat2_index/GRCh38
+
+# Index the GFF3 Annotation
+bgzip Homo_sapiens.GRCh38.114.chr.gff3
+tabix -p gff Homo_sapiens.GRCh38.114.chr.gff3.gz
+```
+If you need to use another release, check the [Ensembl Archive List](https://asia.ensembl.org/Help/ArchiveList), which provides direct access to all historical Ensembl versions.
+
+</pre>
+</details>
+
+<details>
+  <summary><b>Output structure</b></summary>
+<pre>
+results/
+├── alignment/
+|   └── SampleName.sam
+├── bam/ 
+|   ├── SampleName.split.bam
+|   ├── SampleName.fixmate.cs.bam  
+|   ├── SampleName.markdup.bam
+|   ├── SampleName.markdup.bam.bai 
+|   ├── SampleName.sorted.bam   
+│   └── SampleName.sorted.bam.bai
+├── qc/fastp/
+|   ├── SampleName.trim.fastq.gz
+|   ├── SampleName.fastp.json  
+│   └── SampleName.fastp.html            
+└── vcf/
+    ├── annotated_variants/  
+    |      ├── SampleName.annotated.vcf.gz
+    |      └── SampleName.annotated.vcf.gz.tbi
+    ├── bcftools/
+    |      ├── SampleName.raw.vcf.gz
+    |      ├── SampleName.raw.vcf.gz.tbi
+    |      ├── SampleName.filtered.vcf.gz
+    |      └── SampleName.filtered.vcf.gz.tbi  
+    ├── extract_cds_bed/ 
+    |      ├── SampleName.affected_trascripts.txt
+    |      ├── SampleName.cds_affected.bed
+    |      ├── SampleName.protein_altering.bed
+    |      ├── SampleName.protein_altering.positions.tsv
+    |      ├── SampleName.protein_altering.vcf.gz
+    |      └── SampleName.protein_altering.vcf.gz.tbi  
+    ├── extract_sequences/ 
+    |      ├── genome_mutated.fa
+    |      ├── SampleName.mutated_cds.fa
+    |      └── SampleName.original_cds.fa
+    ├── protein_altering/ 
+    |      ├── SampleName.affected_trascripts.txt
+    |      ├── SampleName.protein_altering.bed
+    |      ├── SampleName.protein_altering.positions.tsv
+    |      ├── SampleName.protein_altering.vcf.gz
+    |      └── SampleName.protein_altering.vcf.gz.tbi 
+    └── translate_proteins/   
+           ├── SampleName.mereged_cds.fa
+           ├── SampleName.mutated_proteins.annot.txt
+           └── SampleName.mutated_proteins.fa
+                 
+</pre>
+</details>
+
+
+
+
