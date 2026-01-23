@@ -68,29 +68,32 @@ Enables automated discovery of genetic variants and creation of variant-containi
 <details>
   <summary><b>Repository structure</b></summary>
 <pre>
-immunopeptidogenomics-workflow/
-├── main_SNV.nf                   # Main Nextflow pipeline script
-├── modules/                      # Individual DSL2 modules
-│   ├── prep_reference.nf
-│   ├── alignment_hisat2.nf
-│   ├── markdup.nf
-│   ├── split_n_cigar.nf
-│   ├── variant_calling_bcftools.nf
-│   ├── variant_calling_freebayes.nf
-│   ├── variant_calling_gatk.nf
+variant_calling_immunopeptidogenomics/
+├── main_SNV.nf                  # Main Nextflow pipeline script
+├── modules/                     # DSL2 modules
+│   ├── align_hisat2.nf
 │   ├── annotate_variants.nf
-│   ├── filter_and_extract.nf
-│   ├── match_rna_editing.nf       # Optional step, expands final FASTA annotation 
 │   ├── extract_cds_bed.nf
 │   ├── extract_sequences.nf
+│   ├── filter_and_extract.nf
+│   ├── final_protein_db.nf
+│   ├── fixmate.nf
+│   ├── markdup.nf
+│   ├── match_rna_editing.nf
+│   ├── per_variant_proteins.nf   # New module: per-variant protein generation
+│   ├── prep_reads.nf
+│   ├── prep_reference.nf
+│   ├── sort_index_bam.nf
+│   ├── split_n_cigar.nf
 │   ├── translate_proteins.nf
-│   └── final_protein_db.nf
-├── conf/
-│   └── nextflow.config            # Pipeline configuration
-├── docker/
-│   └── Dockerfile                 # Container definition for Docker profile
-├── environment.yml                # Conda environment definition
-└── README.md                      # Project documentation
+│   └── callers/
+│       ├── bcftools_call.nf
+│       ├── freebayes_call.nf
+│       └── gatk_haplotypecaller.nf
+├── env/                          # Conda environment files
+├── Dockerfile                    # Container definition
+├── nextflow.config               # Pipeline configuration
+└── README.md                     # Project documentation
 </pre>
 </details>
 
@@ -141,9 +144,9 @@ The workflow requires several input parameters that define sequencing data and r
 | `--min_alt`          | Filtering value for the number of alternated nucleotides among the total number nucleotides covering the specific position |`3`|
 | `--min_read_length`  | Filtering value for the leanth of reads     | `35`                                        |
 | `--caller`           | Variant caller selection (`bcftools`, `freebayes`, `gatk`) | `bcftools`                   |
-| `--protein_mode`     | Strategy for variants incorporation in proteins: one variant per one protein (`per_variant`) or all variants in one porotein (`merged`)|`per_variant`|
-| `--canonical_proteins`| File with canonical proteins in FASTA format| `/<your-path>/uniprotkb_proteome.fasta`  |
-| `--decoy_proteins`   | File with decoy proteins in FASTA format   | `/<your-path>/Universal_Contaminants.fasta` |
+| `--protein_mode`     | Protein generation strategy                 | `per_variant` or `merged`                   |
+| `--canonical_proteins`| Canonical protein dataset in FASTA format  | `/<your-path>/uniprotkb_proteome_UP000005640_2025_10_28.fasta` |
+| `--decoy_proteins`   | Decoy protein dataset in FASTA format       | `/<your-path>/0602_Universal_Contaminants.fasta` |
 | `--outdir`           | Output directory                            | `./results_bcftools`                        |
 
 If some of the parameters are not provided directly in the terminal, the pipeline will stop with an error message. 
@@ -157,6 +160,8 @@ If user doesn’t already have the necessary reference genome and annotation fil
 - Reference genome: [Ensembl GRCh38 Release 114](https://ftp.ensembl.org/pub/release-114/fasta/homo_sapiens/dna/) (Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz)
 - Gene model for  allignment and annotation: [Ensembl GTF](https://ftp.ensembl.org/pub/release-114/gff3/homo_sapiens/) (Homo_sapiens.GRCh38.114.chr.gff3.gz)
 - List of A-to-I RNA editing sites: [REDIportal database](http://srv00.recas.ba.infn.it/atlas/index.html) (REDIportal_GRCh38_ensembl_v3.bed.gz)
+- Canonical protein dataset: [UniProtKB human proteome (proteome ID: UP000005640)](https://www.uniprot.org/proteomes/UP000005640)
+- Decoy protein dataset: [0602_Universal Contaminants.fasta](https://github.com/HaoGroup-ProtContLib/Protein-Contaminant-Libraries-for-DDA-and-DIA-Proteomics/blob/main/Universal%20protein%20contaminant%20FASTA/0602_Universal%20Contaminants.fasta)
 
 If .fai, .dict, or HISAT2 index files are missing, they will be automatically created by the pipeline module prep_reference.nf during execution.
 
