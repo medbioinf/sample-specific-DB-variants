@@ -70,7 +70,8 @@ process extract_cds_bed {
         # keep CDS only if its transcript is in the affected set
         if (id in keep) {
             s=\$4-1; if (s<0) s=0  # 0-based start
-            print \$1, s, \$5, id, ".", \$7
+            phase=\$8; if (phase=="" || phase==".") phase=0
+            print \$1, s, \$5, id, ".", \$7, phase
         }
       }
     ' > "${sample_id}.cds_affected.bed"

@@ -39,26 +39,42 @@ import sys
 from pathlib import Path
 
 out_path = Path(sys.argv[1])
-fasta_files = [Path(p) for p in sys.argv[2:]]
+mut_fa = Path(sys.argv[2])
+canon_fa = Path(sys.argv[3])
+decoy_fa = Path(sys.argv[4])
+
+def iter_fasta(p):
+    if not p.exists() or p.stat().st_size == 0:
+        return
+    hdr, seq_chunks = None, []
+    with p.open() as handle:
+        for line in handle:
+            line = line.rstrip("\\n")
+            if not line:
+                continue
+            if line.startswith(">"):
+                if hdr is not None:
+                    yield hdr, "".join(seq_chunks)
+                hdr = line
+                seq_chunks = []
+            else:
+                seq_chunks.append(line.strip())
+    if hdr is not None:
+        yield hdr, "".join(seq_chunks)
 
 with out_path.open("w") as out_handle:
-    first_entry = True
-    for fasta_path in fasta_files:
-        if not fasta_path.exists() or fasta_path.stat().st_size == 0:
-            continue
-        with fasta_path.open() as fasta_handle:
-            for line in fasta_handle:
-                line = line.rstrip()
-                if not line:
-                    continue
-                if line.startswith(">"):
-                    if not first_entry:
-                        out_handle.write("\\n")
-                    out_handle.write(line + "\\n")
-                    first_entry = False
-                else:
-                    seq = line.replace("\\r", "").replace(" ", "").replace("\\t", "").replace("*", "")
-                    out_handle.write(seq + "\\n")
+    first = True
+    # write variant, canonical, and decoy proteins without deduplication
+    for src in (mut_fa, canon_fa, decoy_fa):
+        for hdr, seq in iter_fasta(src):
+            clean_seq = seq.replace("\\r", "").replace(" ", "").replace("\\t", "").replace("*", "")
+            if not clean_seq:
+                continue
+            if not first:
+                out_handle.write("\\n")
+            out_handle.write(f"{hdr}\\n")
+            out_handle.write(f"{clean_seq}\\n")
+            first = False
 PY
 
   if [ "${annotation_file}" != "${sample_id}.mutated_proteins.annot.txt" ]; then

@@ -30,6 +30,7 @@ params.toolbox_image       = 'ghcr.io/your-org/variant-caller-toolbox:latest'
 params.caller              = 'bcftools'    // bcftools | gatk | freebayes
 params.min_dp              = 3             // minimum depth of coverage (total number of reads (REF+ALT))
 params.min_alt             = 3             // minimum ALT-supporting reads
+params.protein_mode        = 'merged'      // merged | per_variant
 
 
 // Modules
@@ -48,6 +49,7 @@ include { filter_and_extract } from './modules/filter_and_extract.nf'
 include { extract_cds_bed } from './modules/extract_cds_bed.nf'
 include { extract_sequences } from './modules/extract_sequences.nf'
 include { translate_proteins } from './modules/translate_proteins.nf'
+include { per_variant_proteins } from './modules/per_variant_proteins.nf'
 include { match_rna_editing } from './modules/match_rna_editing.nf'
 include { final_protein_db } from './modules/final_protein_db.nf'
 
@@ -237,6 +239,8 @@ workflow {
   
   def filtered_vcf_all = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx -> tuple(sid, vcf, tbi) }
   def transcripts      = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx -> tuple(sid, pos, bed, vcf, tbi, tx) }
+  def proteinMode      = (params.protein_mode ?: 'merged')?.toLowerCase()
+  def useMergedMode    = (proteinMode == 'merged')
   
   // Optional step: match RNA editing sites (A to I RNA editing events)
   def editing_catalog   = params.rna_editing ? file(params.rna_editing) : null
@@ -257,53 +261,83 @@ workflow {
     }
   cds_bed = extract_cds_bed(sequences_input_ch)  // emits cds_affected_bed: tuple(sid, positions.tsv, prot_alt.bed, prot_alt.vcf.gz, .tbi, affected_tx.txt, cds_affected.bed)
 
-  // 4) extract FASTA sequences for those CDS regions
-  def cds_input_ch = cds_bed
-    .combine(ref_pair_for_cds)
-    .map { sid, positions_tsv, prot_alt_bed, filtered_vcf, filtered_vcf_tbi, affected_tx, cds_affected_bed, ref_fa, ref_fai ->
-      tuple(sid, file(ref_fa), file(ref_fai), cds_affected_bed, filtered_vcf, filtered_vcf_tbi)
-    }
-  cds_sequences = extract_sequences(cds_input_ch)
+  // 4/5) translate CDS sequences to proteins based on mode
+  def mutated_proteins_fa
+  def mutated_proteins_annot
 
-  // 5) translate CDS sequences to proteins
-  def vcf_for_translate = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx -> tuple(sid, vcf, tbi) }
-  def translate_input_ch_base = cds_sequences.mutated_cds_fa
-    .map { f -> tuple(f.baseName.replace('.mutated_cds',''), f) }   // (sid, mutated_cds.fa)
-    .join(vcf_for_translate)                                        // [sid, fa, vcf, tbi]
-  def translate_input_ch
-  if (editing_catalog) {
-    translate_input_ch = translate_input_ch_base
-      .join(editing_matches_ch)
-      .map { row -> tuple(row[0], row[1], row[2], row[3], row[4]) }
+  if (useMergedMode) {
+    // extract FASTA sequences for those CDS regions (all variants together)
+    def cds_input_ch = cds_bed
+      .combine(ref_pair_for_cds)
+      .map { sid, positions_tsv, prot_alt_bed, filtered_vcf, filtered_vcf_tbi, affected_tx, cds_affected_bed, ref_fa, ref_fai ->
+        tuple(sid, file(ref_fa), file(ref_fai), cds_affected_bed, filtered_vcf, filtered_vcf_tbi)
+      }
+    cds_sequences = extract_sequences(cds_input_ch)
+
+    // translate merged CDS per transcript (existing behavior)
+    def vcf_for_translate = protein_altering_bundle.map { sid, vcf, tbi, pos, bed, tx -> tuple(sid, vcf, tbi) }
+    def mutated_cds_ch = cds_sequences.mutated_cds_fa
+      .map { f -> tuple(f.baseName.replace('.mutated_cds',''), f) }   // (sid, mutated_cds.fa)
+    def original_cds_ch = cds_sequences.original_cds_fa
+      .map { f -> tuple(f.baseName.replace('.original_cds',''), f) }  // (sid, original_cds.fa)
+    def translate_input_ch_base = mutated_cds_ch
+      .join(original_cds_ch)                                          // [sid, mutated_cds.fa, original_cds.fa]
+      .join(vcf_for_translate)                                        // [sid, mutated_cds.fa, original_cds.fa, vcf, tbi]
+    def translate_input_ch
+    if (editing_catalog) {
+      translate_input_ch = translate_input_ch_base
+        .join(editing_matches_ch)
+        .map { row -> tuple(row[0], row[1], row[2], row[3], row[4], row[5]) }
+    }
+    else {
+      def placeholder_path = "${workflow.projectDir}/.empty_rna_editing.txt"
+      def placeholder_file = new File(placeholder_path)
+      if (!placeholder_file.exists()) {
+        placeholder_file.text = ''
+      }
+      def placeholder_nf_file = file(placeholder_path)
+      translate_input_ch = translate_input_ch_base
+        .map { row -> tuple(row[0], row[1], row[2], row[3], row[4], placeholder_nf_file) }
+    }
+    translate_proteins(translate_input_ch)
+
+    mutated_proteins_fa    = translate_proteins.out.mutated_proteins_fa
+      .map { path_obj ->
+        def base = path_obj?.baseName ?: path_obj?.name ?: path_obj?.toString()
+        def sid = base?.replace('.mutated_proteins','')
+        log.info "CDSs are translated to proteins (${sid ?: 'unknown sample'})"
+        path_obj
+      }
+    mutated_proteins_annot = translate_proteins.out.mutated_proteins_annot
   }
   else {
-    def placeholder_path = "${workflow.projectDir}/.empty_rna_editing.txt"
-    def placeholder_file = new File(placeholder_path)
-    if (!placeholder_file.exists()) {
-      placeholder_file.text = ''
-    }
-    def placeholder_nf_file = file(placeholder_path)
-    translate_input_ch = translate_input_ch_base
-      .map { row -> tuple(row[0], row[1], row[2], row[3], placeholder_nf_file) }
+    // per-variant mode: apply variants one-by-one and translate
+    def per_variant_input = cds_bed
+      .combine(ref_pair_for_cds)
+      .map { sid, positions_tsv, prot_alt_bed, filtered_vcf, filtered_vcf_tbi, affected_tx, cds_affected_bed, ref_fa, ref_fai ->
+        tuple(sid, file(ref_fa), file(ref_fai), filtered_vcf, filtered_vcf_tbi, cds_affected_bed)
+      }
+    per_variant_proteins(per_variant_input)
+    mutated_proteins_fa    = per_variant_proteins.out.mutated_proteins_fa
+    mutated_proteins_annot = per_variant_proteins.out.mutated_proteins_annot
   }
-  translate_proteins(translate_input_ch)
 
   // 6) concatenate mutated proteins with: canonical database + decoy database (if provided)
-  def mutated_proteins_fa    = translate_proteins.out.mutated_proteins_fa
-    .map { path_obj ->
-      def base = path_obj?.baseName ?: path_obj?.name ?: path_obj?.toString()
-      def sid = base?.replace('.mutated_proteins','')
-      log.info "CDSs are translated to proteins (${sid ?: 'unknown sample'})"
-      path_obj
-    }
-  def mutated_proteins_annot = translate_proteins.out.mutated_proteins_annot
 
   def canonical_db = params.canonical_proteins ? file(params.canonical_proteins) : null
   def decoy_db     = params.decoy_proteins ? file(params.decoy_proteins) : null
 
   if (canonical_db && decoy_db) {
-    def mutated_channel = mutated_proteins_fa.map { fa -> tuple(fa.baseName.replace('.mutated_proteins',''), fa) }
-    def annot_channel   = mutated_proteins_annot.map { annot -> tuple(annot.baseName.replace('.mutated_proteins.annot',''), annot) }
+    def mutated_channel = mutated_proteins_fa.map { fa ->
+      def base = fa?.baseName ?: fa?.name ?: fa?.toString()
+      def sid = base?.replace('.mutated_proteins','')?.replace('.per_variant_proteins','')
+      tuple(sid, fa)
+    }
+    def annot_channel   = mutated_proteins_annot.map { annot ->
+      def base = annot?.baseName ?: annot?.name ?: annot?.toString()
+      def sid = base?.replace('.mutated_proteins.annot','')?.replace('.per_variant_proteins.annot','')
+      tuple(sid, annot)
+    }
     def final_db_input  = mutated_channel
       .join(annot_channel)
       .map { row -> tuple(row[0], row[1], row[2], canonical_db, decoy_db) }
