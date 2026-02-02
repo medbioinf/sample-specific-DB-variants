@@ -226,13 +226,13 @@ workflow prep_reference {
     CH_HISAT = HISAT2_INDEX(_fa_only)
 
     // 4) If GFF3 provided: filter to chosen contigs, bgzip+tabix, make CDS BED
-  gff3_file
+  GFF3_IN = gff3_file
     .filter { it }
-    .combine( CH_CHOSEN.map { fa, fai, dict -> fai } )
-    .filter { gff3, fai -> gff3 && gff3.toString().trim() }
-    .set { GFF3_AND_FAI }
+    .filter { gff3 -> gff3.toString().trim() }
 
-  def CH_GFF3_FILTERED = FILTER_GFF3_TO_REF(GFF3_AND_FAI)
+  FAI_IN = CH_CHOSEN.map { fa, fai, dict -> fai }
+
+  def CH_GFF3_FILTERED = FILTER_GFF3_TO_REF(GFF3_IN, FAI_IN)
   CH_GFF3 = CH_GFF3_FILTERED.ifEmpty { Channel.of( tuple('', '') ) }
 
   def CH_CDS_RAW = CDS_BED_FROM_GFF3(CH_GFF3_FILTERED.map{ g,t -> g })
