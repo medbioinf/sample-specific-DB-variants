@@ -229,10 +229,14 @@ workflow prep_reference {
   gff3_file
     .filter { it }
     .combine( CH_CHOSEN.map { fa, fai, dict -> fai } )
+    .filter { gff3, fai -> gff3 && gff3.toString().trim() }
     .set { GFF3_AND_FAI }
 
-    CH_GFF3 = GFF3_AND_FAI.isEmpty() ? Channel.of( tuple('', '') ) : FILTER_GFF3_TO_REF(GFF3_AND_FAI)
-    CH_CDS  = GFF3_AND_FAI.isEmpty() ? Channel.of( path('') ) : CDS_BED_FROM_GFF3(CH_GFF3.map{ g,t -> g })
+  def CH_GFF3_FILTERED = FILTER_GFF3_TO_REF(GFF3_AND_FAI)
+  CH_GFF3 = CH_GFF3_FILTERED.ifEmpty { Channel.of( tuple('', '') ) }
+
+  def CH_CDS_RAW = CDS_BED_FROM_GFF3(CH_GFF3_FILTERED.map{ g,t -> g })
+  CH_CDS  = CH_CDS_RAW.ifEmpty { Channel.of( path('') ) }
 
     // 5) Emit tidy bundle
     REF_BUNDLE = CH_CHOSEN
