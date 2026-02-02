@@ -32,9 +32,9 @@ process FAIDX_DICT {
     path ref_fa
 
   output:
-    tuple path("${base}.fasta"),
-          path("${base}.fasta.fai"),
-          path("${base}.dict")
+    tuple path("*.fasta"),
+          path("*.fasta.fai"),
+          path("*.dict")
 
   script:
     def base = ref_fa.baseName.replaceAll(/\.fa(sta)?$/, '')
@@ -71,9 +71,9 @@ process MAKE_MAINCHR_FASTA {
     tuple path(ref_fa), path(fai), path(dict)
 
   output:
-    tuple path("${base}.fasta"),
-          path("${base}.fasta.fai"),
-          path("${base}.dict")
+    tuple path("*.fasta"),
+          path("*.fasta.fai"),
+          path("*.dict")
 
   when:
     USE_MAIN_CHR
@@ -236,7 +236,7 @@ workflow prep_reference {
   CH_GFF3 = CH_GFF3_FILTERED.ifEmpty { Channel.of( tuple('', '') ) }
 
   def CH_CDS_RAW = CDS_BED_FROM_GFF3(CH_GFF3_FILTERED.map{ g,t -> g })
-  CH_CDS  = CH_CDS_RAW.ifEmpty { Channel.of( path('') ) }
+  CH_CDS  = CH_CDS_RAW.ifEmpty { Channel.of( file('') ) }
 
     // 5) Emit tidy bundle
     REF_BUNDLE = CH_CHOSEN
