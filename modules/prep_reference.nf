@@ -233,10 +233,10 @@ workflow prep_reference {
   FAI_IN = CH_CHOSEN.map { fa, fai, dict -> fai }
 
   def CH_GFF3_FILTERED = FILTER_GFF3_TO_REF(GFF3_IN, FAI_IN)
-  CH_GFF3 = CH_GFF3_FILTERED.ifEmpty { Channel.of( tuple('', '') ) }
+  CH_GFF3 = CH_GFF3_FILTERED.ifEmpty { Channel.of( tuple(null, null) ) }
 
   def CH_CDS_RAW = CDS_BED_FROM_GFF3(CH_GFF3_FILTERED.map{ g,t -> g })
-  CH_CDS  = CH_CDS_RAW.ifEmpty { Channel.of( file('') ) }
+  CH_CDS  = CH_CDS_RAW.ifEmpty { Channel.of( null ) }
 
     // 5) Emit tidy bundle
     REF_BUNDLE = CH_CHOSEN
