@@ -1,0 +1,73 @@
+# ── Nextflow ──────────────────────────────────────────────────────────────────
+.nextflow/
+.nextflow.log
+.nextflow.log.*
+work/
+trace-*.txt
+timeline-*.html
+report-*.html
+dag-*.html
+dag-*.dot
+
+# ── Pipeline outputs ──────────────────────────────────────────────────────────
+results*/
+output*/
+01_reference/
+02_prep_reads/
+03_alignment/
+04_bam/
+05_var_ident/
+06_vcf/
+07_translate_proteins/
+08_final_db/
+
+# ── Large genomics/reference files ───────────────────────────────────────────
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bam.bai
+*.sam
+*.cram
+*.vcf
+*.vcf.gz
+*.vcf.gz.tbi
+*.bcf
+*.fa
+*.fa.gz
+*.fasta
+*.fasta.gz
+*.fai
+*.dict
+*.gff3
+*.gff3.gz
+*.gff3.gz.tbi
+*.gtf
+*.gtf.gz
+*.bed
+*.bed.gz
+*.tsv
+*.csv
+
+# ── Conda environments ────────────────────────────────────────────────────────
+env/*.tar.gz
+.conda/
+conda-env/
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+.dockerignore
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+
+# ── Python (if any helper scripts) ───────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.env
