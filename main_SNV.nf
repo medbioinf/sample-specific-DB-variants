@@ -95,7 +95,7 @@ workflow {
   ch_ref_fasta = Channel.fromPath(params.ref_fasta, checkIfExists: true)
   ch_gff3      = params.gff3_file
     ? Channel.fromPath(params.gff3_file, checkIfExists: true)
-    : Channel.value(null)
+    : Channel.empty()
 
   ch_dbsnp  = params.dbsnp_path       ? Channel.fromPath(params.dbsnp_path, checkIfExists: true)
                                     : Channel.value(null)
