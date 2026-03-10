@@ -36,25 +36,28 @@ process FAIDX_DICT {
           path("*.fasta.fai"),
           path("*.dict")
 
-  script:
-    def base = ref_fa.baseName.replaceAll(/\.fa(sta)?$/, '')
+script:
+    def base = ref_fa.baseName.replaceAll(/\.fa(sta)?(\.gz)?$/, '')
     """
     set -euo pipefail
-    cp -f ${ref_fa} ${base}.fasta
 
-    if [ ! -s ${base}.fasta.fai ]; then
-      samtools faidx ${base}.fasta
+    # Detect gzip by magic bytes (1f 8b) — no 'file' command needed
+    if od -A n -N 2 -t x1 ${ref_fa} | grep -q '1f 8b'; then
+      echo "Input is gzip-compressed. Decompressing..."
+      gunzip -c ${ref_fa} > ${base}.fasta
+    else
+      cp -f ${ref_fa} ${base}.fasta
     fi
 
-    if [ ! -s ${base}.dict ]; then
-      if command -v gatk >/dev/null 2>&1; then
-        gatk CreateSequenceDictionary -R ${base}.fasta -O ${base}.dict
-      elif command -v picard >/dev/null 2>&1; then
-        picard CreateSequenceDictionary R=${base}.fasta O=${base}.dict
-      else
-        echo "ERROR: Need GATK or Picard for CreateSequenceDictionary" >&2
-        exit 2
-      fi
+    samtools faidx ${base}.fasta
+
+    if command -v gatk >/dev/null 2>&1; then
+      gatk CreateSequenceDictionary -R ${base}.fasta -O ${base}.dict
+    elif command -v picard >/dev/null 2>&1; then
+      picard CreateSequenceDictionary R=${base}.fasta O=${base}.dict
+    else
+      echo "ERROR: Need GATK or Picard for CreateSequenceDictionary" >&2
+      exit 2
     fi
     """
 }
