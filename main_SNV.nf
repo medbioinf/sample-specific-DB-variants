@@ -119,7 +119,7 @@ workflow {
     // create a single-emission channel carrying the 7-tuple
     ch_ref_bundle = Channel.value( tuple(ref_fa, ref_fai, ref_dict, hisat2, gff3_f, gff3_tbi, cds_bed) )
 
-    log.info "Referecne bundle is used"
+    log.info "Reference bundle is used"
   }
   else {
     // prep_reference must define: out: tuple val(fa), val(fai), val(dict), path(hisat2_tar_or_dir), path(gff3_f), path(gff3_tbi), path(cds_bed)
