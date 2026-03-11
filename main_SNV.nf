@@ -154,7 +154,7 @@ workflow {
   def ch_align_out = align_hisat2.out[0]
   ch_align_out.subscribe { tuple ->
     def sid = tuple instanceof java.util.List ? tuple[0] : tuple?.getAt(0)
-    if (sid) log.info "Alignment is complited (${sid})"
+    if (sid) log.info "Alignment is completed (${sid})"
   }
   def ch_sam_or_bam = ch_align_out
 
