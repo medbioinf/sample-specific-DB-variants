@@ -156,7 +156,7 @@ process FILTER_GFF3_TO_REF {
     # Keep only features with seqid present in FASTA FAI, preserve directives/comments
     zcat ${gff3} | awk 'BEGIN{while((getline<"contigs.txt")>0) c[\$1]=1}
          /^#/ {print; next}
-         c[\$1]==1 {print}' > filtered.gff3
+         c[\$1]==1 {print}'| sort -k1,1 -k4,4n > filtered.gff3
 
     bgzip -f filtered.gff3
     tabix -p gff ${'filtered.gff3.gz'}

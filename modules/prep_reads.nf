@@ -50,7 +50,7 @@ process prep_reads {
     # Single-end
     fastp \
       -i ${r1} \
-      -o ${sample_id}_SE.trim.fastq.gz \
+      -o ${sample_id}_R.trim.fastq.gz \
       --detect_adapter_for_pe \
       --trim_poly_g \
       --cut_front --cut_tail --cut_mean_quality \$CUT_QUAL \
